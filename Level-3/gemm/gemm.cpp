@@ -27,6 +27,7 @@ THE SOFTWARE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <vector>
+#include <chrono>
 
 int main(int argc, char** argv)
 {
@@ -36,14 +37,14 @@ int main(int argc, char** argv)
 
     rocblas_status rstatus = rocblas_status_success;
 
-    typedef float dataType;
+    typedef double dataType;
 
     rocblas_int M = options.M;
     rocblas_int N = options.N;
     rocblas_int K = options.K;
 
-    float hAlpha = options.alpha;
-    float hBeta  = options.beta;
+    dataType hAlpha = options.alpha;
+    dataType hBeta  = options.beta;
 
     const rocblas_operation transA = rocblas_operation_none;
     const rocblas_operation transB = rocblas_operation_none;
@@ -123,9 +124,21 @@ int main(int argc, char** argv)
         rstatus = rocblas_set_pointer_mode(handle, rocblas_pointer_mode_host);
         CHECK_ROCBLAS_STATUS(rstatus);
 
+	using clock = std::chrono::system_clock;
+	using sec = std::chrono::duration<double>;
+	const auto before = clock::now();
+
         // asynchronous calculation on device, returns before finished calculations
-        rstatus = rocblas_sgemm(
+        rstatus = rocblas_dgemm(
             handle, transA, transB, M, N, K, &hAlpha, dA, lda, dB, ldb, &hBeta, dC, ldc);
+
+	const sec duration = clock::now() - before;
+	double M_ = M;
+	double numops = M_ * N * K * 2.0 / 1e9;
+
+	std::cout << "M, N, K, lda, ldb, ldc = " << M << ", " << N << ", " << K << ", " << lda << ", "
+		<< ldb << ", " << ldc 
+		<< " "<< duration.count() << " " << numops/duration.count() << std::endl;
 
         // check that calculation was launched correctly on device, not that result
         // was computed yet
@@ -136,10 +149,8 @@ int main(int argc, char** argv)
 
     } // release device memory via helpers::DeviceVector destructors
 
-    std::cout << "M, N, K, lda, ldb, ldc = " << M << ", " << N << ", " << K << ", " << lda << ", "
-              << ldb << ", " << ldc << std::endl;
-
     // calculate gold standard using CPU
+    if(0){
     helpers::matMatMult<dataType>(hAlpha,
                                   hBeta,
                                   M,
@@ -167,7 +178,7 @@ int main(int argc, char** argv)
         std::cout << "PASS";
     }
     std::cout << ": max. relative err. = " << maxRelativeError << std::endl;
-
+    }
     rstatus = rocblas_destroy_handle(handle);
     CHECK_ROCBLAS_STATUS(rstatus);
 
